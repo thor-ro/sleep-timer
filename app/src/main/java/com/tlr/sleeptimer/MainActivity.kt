@@ -118,13 +118,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Whether the user has switched this app's accessibility service on.
+     *
+     * Two independent sources are consulted, because neither alone is reliable everywhere:
+     *
+     *  - [android.view.accessibility.AccessibilityManager.getEnabledAccessibilityServiceList]
+     *    is the semantically correct API, but it only reports services the system has already
+     *    *bound*. That misses the window right after the user flips the switch, and on some
+     *    OEM builds (Xiaomi HyperOS in particular) a service declaring no accessibility event
+     *    types never appears in it at all -- which this service deliberately does, since it
+     *    only needs performGlobalAction and no event delivery.
+     *  - ENABLED_ACCESSIBILITY_SERVICES is the raw record of what the user switched on, so it
+     *    is correct even when the service is not (yet) bound. It is parsed with exact
+     *    component matching by [AccessibilityServiceDetection]; the naive `contains` check
+     *    this code used originally would also match another app whose component name merely
+     *    contains ours as a substring.
+     */
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val accessibilityManager =
-            getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         val expected = ComponentName(this, TimerService::class.java)
-        return accessibilityManager
-            .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            .any { info -> ComponentName.unflattenFromString(info.id) == expected }
+
+        val boundAccordingToManager = runCatching {
+            (getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager)
+                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                .any { info -> ComponentName.unflattenFromString(info.id) == expected }
+        }.getOrDefault(false)
+        if (boundAccordingToManager) return true
+
+        val setting = runCatching {
+            Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+        }.getOrNull()
+        return AccessibilityServiceDetection.isServiceEnabled(
+            settingValue = setting,
+            packageName = packageName,
+            className = TimerService::class.java.name
+        )
     }
 
     private fun openAccessibilitySettings() {
