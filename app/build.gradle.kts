@@ -18,6 +18,11 @@ val keystoreProperties = Properties().apply {
     }
 }
 
+// Version is supplied by the release workflow from the git tag (see .github/workflows/release.yml)
+// and falls back to these values for ordinary local builds.
+val appVersionName = (findProperty("appVersionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.0"
+val appVersionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.tlr.sleeptimer"
     compileSdk = 36
@@ -26,8 +31,8 @@ android {
         applicationId = "com.tlr.sleeptimer"
         minSdk = 35
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,7 +40,9 @@ android {
     signingConfigs {
         if (hasKeystoreProperties) {
             create("release") {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                // rootProject.file, not file(): paths are documented as relative to the repo
+                // root in keystore.properties.example, whereas file() would resolve against app/.
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")

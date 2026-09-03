@@ -1,0 +1,199 @@
+name: Release
+
+# Builds and publishes a release whenever a version tag is pushed, e.g.
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# The tag drives versionName; versionCode is derived from it (see "Derive version").
+# Tests and lint must pass before anything is published. Each run attaches a signed APK
+# and AAB to the GitHub release, and keeps the R8 mapping.txt as a workflow artifact so
+# obfuscated stack traces from that build can still be read.
+#
+# SIGNING: without the secrets below the workflow still succeeds, but produces an
+# UNSIGNED build that cannot be installed or uploaded to Play. To sign releases, add
+# these four repository secrets (Settings > Secrets and variables > Actions):
+#
+#   KEYSTORE_BASE64    base64 of your release keystore:
+#                        base64 -i release.jks | pbcopy      (macOS)
+#                        base64 -w0 release.jks              (Linux)
+#   KEYSTORE_PASSWORD  the keystore password
+#   KEY_ALIAS          the key alias inside the keystore
+#   KEY_PASSWORD       the password for that key
+#
+# The keystore itself must never be committed; keystore.properties is gitignored.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. 1.2.0 (no release is published for manual runs)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # The wrapper jar is executable code committed to the repo; verify it against the
+      # published Gradle checksums before running it.
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Derive version
+        id: version
+        env:
+          # Passed through the environment rather than interpolated into the script body,
+          # so a crafted tag or input cannot inject shell.
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION}" ]; then
+            RAW="${INPUT_VERSION}"
+          else
+            RAW="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${RAW#v}"
+
+          # versionCode must increase monotonically. Derive it from semver so it is a pure
+          # function of the tag (re-running a build cannot change it); fall back to the run
+          # number for tags that are not semver. Note this scheme assumes minor and patch
+          # each stay below 100 (1.0.100 would collide with 1.1.0).
+          if [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+            CODE=$(( ${BASH_REMATCH[1]} * 10000 + ${BASH_REMATCH[2]} * 100 + ${BASH_REMATCH[3]} ))
+          else
+            CODE="${GITHUB_RUN_NUMBER}"
+            echo "::warning::Tag '$RAW' is not semver; falling back to run number $CODE for versionCode."
+          fi
+
+          # A hyphen marks a pre-release, e.g. v1.2.0-beta1.
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
+
+          {
+            echo "name=$VERSION"
+            echo "code=$CODE"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building version $VERSION (versionCode $CODE, prerelease=$PRERELEASE)"
+
+      - name: Configure release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64}" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::KEYSTORE_BASE64 secret is not set. The build will be UNSIGNED and cannot be installed or uploaded to Play. See the release workflow header for setup."
+            exit 0
+          fi
+          echo "${KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.jks"
+          # keystore.properties is gitignored; the build reads it from the repo root.
+          cat > keystore.properties <<EOF
+          storeFile=${RUNNER_TEMP}/release.jks
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      # Gate the release on the same checks used locally: a tag must never publish a
+      # build whose tests or lint are failing.
+      - name: Test and lint
+        run: ./gradlew testDebugUnitTest lintDebug --no-daemon
+
+      - name: Build release APK and AAB
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          ./gradlew assembleRelease bundleRelease --no-daemon \
+            "-PappVersionName=${VERSION_NAME}" \
+            "-PappVersionCode=${VERSION_CODE}"
+
+      - name: Collect artifacts
+        id: collect
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          V="${VERSION_NAME}"
+          mkdir -p dist
+          # Signed and unsigned builds land under different file names.
+          APK=$(find app/build/outputs/apk/release -name '*.apk' -print -quit)
+          AAB=$(find app/build/outputs/bundle/release -name '*.aab' -print -quit)
+          [ -n "$APK" ] || { echo "No APK produced"; exit 1; }
+          [ -n "$AAB" ] || { echo "No AAB produced"; exit 1; }
+          cp "$APK" "dist/sleep-timer-${V}.apk"
+          cp "$AAB" "dist/sleep-timer-${V}.aab"
+          ls -lh dist
+          echo "apk=dist/sleep-timer-${V}.apk" >> "$GITHUB_OUTPUT"
+          echo "aab=dist/sleep-timer-${V}.aab" >> "$GITHUB_OUTPUT"
+
+      # Needed to deobfuscate R8-minified stack traces from this exact build. Kept as a
+      # workflow artifact rather than a public release asset.
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapping-${{ steps.version.outputs.name }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleep-timer-${{ steps.version.outputs.name }}
+          path: dist/*
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          IS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          IS_SIGNED: ${{ steps.signing.outputs.signed }}
+          APK_PATH: ${{ steps.collect.outputs.apk }}
+          AAB_PATH: ${{ steps.collect.outputs.aab }}
+        run: |
+          set -euo pipefail
+          NOTES=""
+          if [ "${IS_SIGNED}" != "true" ]; then
+            NOTES=$'> **Warning**\n> This build is **unsigned** - no signing keystore was configured in repository secrets, so it cannot be installed on a device or uploaded to Play.\n'
+          fi
+          ARGS=()
+          if [ "${IS_PRERELEASE}" = "true" ]; then ARGS+=(--prerelease); fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "SleepTimer ${VERSION_NAME}" \
+            --generate-notes \
+            --notes "$NOTES" \
+            "${ARGS[@]}" \
+            "${APK_PATH}" \
+            "${AAB_PATH}"
