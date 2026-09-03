@@ -5,4 +5,5 @@
     <color name="moonlight_cream">#FFFDF5E6</color>
     <color name="soft_teal">#FFAEECEF</color>
     <color name="dusty_rose">#FFF08080</color>
+    <color name="button_label">#FF1A1A1A</color>
 </resources>

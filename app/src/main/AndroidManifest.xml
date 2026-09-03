@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Notwendige Berechtigungen -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Runtime-requested by MainActivity so the countdown notification can be shown. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A user-set timer is exactly the category Google allows this permission for; still
+         falls back to an inexact alarm if canScheduleExactAlarms() ever returns false. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:allowBackup="true"
@@ -15,8 +15,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SleepTimer"
-        tools:targetApi="31">
+        android:theme="@style/Theme.SleepTimer">
 
         <activity
             android:name=".MainActivity"
@@ -28,13 +27,14 @@
             </intent-filter>
         </activity>
 
-        <!-- DER KOMBINIERTE SERVICE -->
+        <!-- Bound by the system as soon as the user enables it in Accessibility settings; its
+             only job is to call performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) once the timer
+             expires. It also receives ACTION_START/ACTION_ABORT/ACTION_ALARM_FIRED intents. -->
         <service
             android:name=".TimerService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:label="@string/app_name"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:exported="true">
 
             <intent-filter>
                 <!-- Dies sorgt dafür, dass er in den Bedienungshilfen erscheint -->
