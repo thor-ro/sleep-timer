@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">SleepTimer</string>
+    <string name="accessibility_description">Used to turn off the screen when the timer ends.</string>
+</resources>
