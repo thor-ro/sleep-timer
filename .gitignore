@@ -20,3 +20,6 @@ local.properties
 /app/build/
 .kotlin/
 /.idea/
+
+# Release signing credentials - never commit
+/keystore.properties

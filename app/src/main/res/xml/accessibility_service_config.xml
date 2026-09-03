@@ -3,12 +3,13 @@
   This service never inspects screen content. It only calls
   performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) when the timer expires, which
   requires no event delivery, no window content and no gesture dispatch.
-  Requesting typeNone keeps the system from IPC-ing every UI event on the
-  device into this process.
+
+  accessibilityEventTypes is deliberately omitted: the attribute has no "none"
+  flag, and leaving it unset means eventTypes defaults to 0, so the system does
+  not deliver any accessibility events to this process at all.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_description"
-    android:accessibilityEventTypes="typeNone"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRetrieveWindowContent="false"
     android:canPerformGestures="false"
