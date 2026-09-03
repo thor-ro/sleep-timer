@@ -1,19 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The only thing this app persists is the running timer's end time, which is a
+  SystemClock.elapsedRealtime() value plus the boot instant it was recorded in. Those are
+  meaningless on another device or after a reboot, so they must never travel in a backup or
+  a device-to-device transfer. TimerStateLogic.restoreState would discard restored values
+  anyway; excluding them here stops them being copied around in the first place.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="sleep_timer_prefs.xml" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="sleep_timer_prefs.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

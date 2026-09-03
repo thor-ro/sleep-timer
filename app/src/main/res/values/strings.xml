@@ -12,4 +12,18 @@
     <string name="enable_accessibility_button">ENABLE ACCESSIBILITY</string>
     <string name="abort_timer_button">ABORT TIMER</string>
     <string name="duration_minutes_label">%1$d min</string>
+    <string name="accessibility_lost_warning">A timer is running, but accessibility access is off, so the screen will not lock. Tap below to re-enable it.</string>
+
+    <!-- Spoken by screen readers; the on-screen countdown shows only "%1$d:%2$d".
+         Built from plurals so a one-minute-one-second countdown does not read as
+         "1 minutes 1 seconds". -->
+    <string name="timer_remaining_content_description">%1$s %2$s remaining</string>
+    <plurals name="minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
 </resources>

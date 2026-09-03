@@ -113,7 +113,14 @@ class TimerService : AccessibilityService() {
         pauseAndLockJob = serviceScope.launch {
             pauseMedia()
             delay(PAUSE_BEFORE_LOCK_DELAY_MS)
-            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            // Returns false when the service is not currently connected — which is exactly what
+            // happens if the user turned accessibility off while a timer was armed. Media still
+            // gets paused, but the screen will not lock, so make that visible rather than
+            // failing silently. MainActivity warns about the same condition up front.
+            val locked = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            if (!locked) {
+                Log.w(TAG, "GLOBAL_ACTION_LOCK_SCREEN was refused; is the accessibility service still enabled?")
+            }
             cancelAlarm()
             dismissNotification()
             SleepTimerRepository.abort(this@TimerService)

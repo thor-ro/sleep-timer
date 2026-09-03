@@ -12,4 +12,16 @@
     <string name="enable_accessibility_button">BEDIENUNGSHILFEN AKTIVIEREN</string>
     <string name="abort_timer_button">TIMER ABBRECHEN</string>
     <string name="duration_minutes_label">%1$d Min.</string>
+    <string name="accessibility_lost_warning">Ein Timer läuft, aber der Zugriff auf die Bedienungshilfen ist deaktiviert – der Bildschirm wird nicht gesperrt. Zum Reaktivieren unten tippen.</string>
+
+    <!-- Wird von Screenreadern vorgelesen; angezeigt wird nur "%1$d:%2$d". -->
+    <string name="timer_remaining_content_description">Noch %1$s und %2$s</string>
+    <plurals name="minutes">
+        <item quantity="one">%d Minute</item>
+        <item quantity="other">%d Minuten</item>
+    </plurals>
+    <plurals name="seconds">
+        <item quantity="one">%d Sekunde</item>
+        <item quantity="other">%d Sekunden</item>
+    </plurals>
 </resources>

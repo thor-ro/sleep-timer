@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.SleepTimer" parent="android:Theme.Material.NoActionBar">
-        <!-- Matches the night-sky background so cold start does not flash white -->
+        <!--
+          Matches the night-sky background so cold start does not flash white.
+          statusBarColor/navigationBarColor are deliberately absent: Android 15 ignores them
+          under enforced edge-to-edge, so setting them would only be misleading.
+        -->
         <item name="android:windowBackground">@color/night_background</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

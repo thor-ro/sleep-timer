@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,7 +29,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -44,6 +50,10 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 15 force-enables edge-to-edge for apps targeting SDK 35+, with no opt-out.
+        // Declaring it here makes that explicit; the content column below consumes the
+        // resulting insets while the background image deliberately stays full-bleed.
+        enableEdgeToEdge()
 
         // Populate the shared state flow from persisted prefs immediately, so the very first
         // frame is correct even if this activity is opened before the accessibility service
@@ -130,7 +140,8 @@ fun SleepTimerScreen(
     onAbortTimer: () -> Unit,
     onRequestEnableAccessibility: () -> Unit
 ) {
-    var sliderValue by remember { mutableFloatStateOf(30f) }
+    // rememberSaveable, not remember: a rotation must not silently reset the user's choice.
+    var sliderValue by rememberSaveable { mutableFloatStateOf(30f) }
 
     val moonlightCream = colorResource(id = R.color.moonlight_cream)
     val softTeal = colorResource(id = R.color.soft_teal)
@@ -166,6 +177,7 @@ fun SleepTimerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .safeDrawingPadding()
                 .padding(horizontal = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -182,11 +194,22 @@ fun SleepTimerScreen(
                         val minutes = (remainingMillis / 1000) / 60
                         val seconds = (remainingMillis / 1000) % 60
                         val locale = LocalLocale.current.platformLocale
+                        // "12:30" alone reads as bare digits. Note this is deliberately NOT a
+                        // liveRegion: the value changes every second, and a polite live region
+                        // would make TalkBack interrupt itself once a second for up to an hour.
+                        val remainingDescription = stringResource(
+                            R.string.timer_remaining_content_description,
+                            pluralStringResource(R.plurals.minutes, minutes.toInt(), minutes.toInt()),
+                            pluralStringResource(R.plurals.seconds, seconds.toInt(), seconds.toInt())
+                        )
                         Text(
                             text = String.format(locale, "%02d:%02d", minutes, seconds),
                             fontSize = 72.sp,
                             fontWeight = FontWeight.Light,
-                            color = moonlightCream
+                            color = moonlightCream,
+                            modifier = Modifier.semantics {
+                                contentDescription = remainingDescription
+                            }
                         )
                     } else {
                         Text(
@@ -196,10 +219,19 @@ fun SleepTimerScreen(
                             color = moonlightCream
                         )
                         Spacer(modifier = Modifier.height(16.dp))
+                        val sliderStateDescription = pluralStringResource(
+                            R.plurals.minutes,
+                            sliderValue.toInt(),
+                            sliderValue.toInt()
+                        )
                         Slider(
                             value = sliderValue,
                             onValueChange = { sliderValue = it },
                             valueRange = 1f..60f,
+                            // Without this the slider announces a bare percentage.
+                            modifier = Modifier.semantics {
+                                stateDescription = sliderStateDescription
+                            },
                             colors = SliderDefaults.colors(
                                 thumbColor = softTeal,
                                 activeTrackColor = softTeal,
@@ -214,13 +246,30 @@ fun SleepTimerScreen(
 
             // Without accessibility access the app cannot lock the screen, so say so rather
             // than letting the start button silently bounce the user into system settings.
-            if (!isTimerRunning && !isAccessibilityServiceEnabled) {
+            // The running case is the more urgent one: a timer is already counting down that
+            // will pause media but fail to lock, so it is called out in the warning colour.
+            if (!isAccessibilityServiceEnabled) {
                 Text(
-                    text = stringResource(R.string.accessibility_required_hint),
+                    text = stringResource(
+                        if (isTimerRunning) R.string.accessibility_lost_warning
+                        else R.string.accessibility_required_hint
+                    ),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
-                    color = moonlightCream.copy(alpha = 0.75f)
+                    color = if (isTimerRunning) dustyRose else moonlightCream.copy(alpha = 0.75f)
                 )
+                if (isTimerRunning) {
+                    // The primary button below stays ABORT while a timer runs, so the route to
+                    // the accessibility settings gets its own control rather than displacing it.
+                    TextButton(onClick = onRequestEnableAccessibility) {
+                        Text(
+                            text = stringResource(R.string.enable_accessibility_button),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = softTeal
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
